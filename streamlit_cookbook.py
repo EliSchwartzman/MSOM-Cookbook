@@ -1,7 +1,6 @@
 import uuid
 
 import streamlit as st
-from PIL import Image
 from supabase import create_client, Client
 
 
@@ -20,6 +19,7 @@ BUCKET_NAME = st.secrets["SUPABASE"]["BUCKET"]
 
 
 def upload_image_to_storage(file) -> str | None:
+    """Upload an image to Supabase Storage and return its public URL."""
     if file is None:
         return None
 
@@ -36,6 +36,7 @@ def upload_image_to_storage(file) -> str | None:
         file_options={"content-type": f"image/{file_ext}"},
     )
 
+    # Newer client returns a dict; older may differ slightly
     if isinstance(res, dict) and res.get("error"):
         st.error(f"Error uploading image: {res['error']['message']}")
         return None
@@ -52,7 +53,7 @@ def save_recipe_to_supabase(name: str, description: str | None, text_body: str |
         "image_url": image_url,
     }
     response = supabase.table("recipes").insert(data).execute()
-    # Python client returns .error on some versions; on others you check response.data
+    # Handle both old and new client styles
     if hasattr(response, "error") and response.error:
         raise RuntimeError(response.error)
     return response
@@ -105,7 +106,7 @@ with tab_text:
                     name=name,
                     description=short_desc or None,
                     text_body=full_text,
-                    image_url=None,  # TEXT ONLY path, no image
+                    image_url=None,  # text-only recipes have no image
                 )
                 st.success("Text recipe submitted successfully!")
             except Exception as e:
@@ -143,7 +144,7 @@ with tab_image:
                         name=name_img or "Untitled recipe",
                         description=short_desc_img or None,
                         text_body=notes or None,
-                        image_url=image_url,  # IMAGE path, stores URL
+                        image_url=image_url,
                     )
                     st.success("Image recipe submitted successfully!")
                     st.image(image_url, caption="Submitted image", use_container_width=True)

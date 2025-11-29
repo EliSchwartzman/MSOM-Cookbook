@@ -23,7 +23,6 @@ def upload_image_to_storage(file) -> str | None:
     if file is None:
         return None
 
-    # Read bytes for upload
     file_bytes = file.read()
     file_ext = file.name.split(".")[-1].lower()
     if file_ext not in ["png", "jpg", "jpeg"]:
@@ -38,12 +37,10 @@ def upload_image_to_storage(file) -> str | None:
         file_options={"content-type": f"image/{file_ext}"},
     )
 
-    # Handle error shape from Python client
     if isinstance(res, dict) and res.get("error"):
         st.error(f"Error uploading image: {res['error']['message']}")
         return None
 
-    # This is the actual public URL in Supabase
     public_url = supabase.storage.from_(BUCKET_NAME).get_public_url(path)
     return public_url
 
@@ -156,7 +153,7 @@ with tab_image:
             st.error("Please upload an image to submit.")
         else:
             try:
-                # Show preview directly from uploaded file
+                # Preview directly from uploaded file
                 img = Image.open(uploaded_img)
                 st.image(img, caption="Uploaded image", use_container_width=True)
 
@@ -171,7 +168,7 @@ with tab_image:
                         name=name_img or "Untitled recipe",
                         description=short_desc_img or None,
                         text_body=notes or None,
-                        image_url=image_url,  # store Supabase public URL
+                        image_url=image_url,  # Supabase public URL
                     )
                     st.success("Image recipe submitted successfully!")
             except Exception as e:
@@ -206,4 +203,7 @@ with tab_list:
 
                 if r.get("image_url"):
                     st.markdown("**Image:**")
+                    # Clickable URL to the Supabase-stored image
+                    st.markdown(f"[Open image in new tab]({r['image_url']})")
+                    # Inline image preview
                     st.image(r["image_url"], use_container_width=True)

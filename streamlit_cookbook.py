@@ -16,9 +16,7 @@ def init_supabase() -> Client:
 
 supabase: Client = init_supabase()
 
-# Either use secrets or hardcode to debug; this must match your Supabase bucket name exactly
-BUCKET_NAME = st.secrets["SUPABASE"]["BUCKET"]
-# BUCKET_NAME = "recipes"  # uncomment to hardcode while testing
+BUCKET_NAME = st.secrets["SUPABASE"]["BUCKET"]  # "recipes"
 
 
 def upload_image_to_storage(file) -> str | None:
@@ -31,6 +29,7 @@ def upload_image_to_storage(file) -> str | None:
     if file_ext not in ["png", "jpg", "jpeg"]:
         file_ext = "png"
 
+    # Folder inside bucket; object key will look like "recipes/<uuid>.png"
     path = f"recipes/{uuid.uuid4()}.{file_ext}"
 
     res = supabase.storage.from_(BUCKET_NAME).upload(
@@ -39,7 +38,6 @@ def upload_image_to_storage(file) -> str | None:
         file_options={"content-type": f"image/{file_ext}"},
     )
 
-    # Python client may return a dict with error
     if isinstance(res, dict) and res.get("error"):
         st.error(f"Error uploading image: {res['error']['message']}")
         return None
@@ -49,10 +47,7 @@ def upload_image_to_storage(file) -> str | None:
 
 
 def save_recipe_to_supabase(
-    name: str,
-    description: str | None,
-    text_body: str | None,
-    image_url: str | None,
+    name: str, description: str | None, text_body: str | None, image_url: str | None
 ):
     data = {
         "name": name,
@@ -63,7 +58,6 @@ def save_recipe_to_supabase(
 
     response = supabase.table("recipes").insert(data).execute()
 
-    # Python client returns .error on some versions
     if hasattr(response, "error") and response.error:
         raise RuntimeError(response.error)
 
@@ -125,7 +119,7 @@ with tab_text:
                     name=name,
                     description=short_desc or None,
                     text_body=full_text,
-                    image_url=None,  # text only
+                    image_url=None,
                 )
                 st.success("Text recipe submitted successfully!")
             except Exception as e:
@@ -159,6 +153,8 @@ with tab_image:
         else:
             try:
                 image_url = upload_image_to_storage(uploaded_img)
+                st.write("Image URL:", image_url)  # debug line, optional
+
                 if image_url is None:
                     st.error("Could not upload image.")
                 else:
@@ -169,9 +165,7 @@ with tab_image:
                         image_url=image_url,
                     )
                     st.success("Image recipe submitted successfully!")
-                    st.image(
-                        image_url, caption="Submitted image", use_container_width=True
-                    )
+                    st.image(image_url, caption="Submitted image", use_container_width=True)
             except Exception as e:
                 st.error(f"Error saving image recipe: {e}")
 
@@ -204,4 +198,5 @@ with tab_list:
 
                 if r.get("image_url"):
                     st.markdown("**Image:**")
+                    st.write("Image URL:", r["image_url"])  # debug, optional
                     st.image(r["image_url"], use_container_width=True)

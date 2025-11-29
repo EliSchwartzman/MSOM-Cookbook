@@ -15,11 +15,11 @@ def init_supabase() -> Client:
 
 
 supabase: Client = init_supabase()
-
 BUCKET_NAME = st.secrets["SUPABASE"]["BUCKET"]  # "recipes"
 
 
 def upload_image_to_storage(file) -> str | None:
+    """Upload file bytes to Supabase Storage and return the public URL."""
     if file is None:
         return None
 
@@ -43,12 +43,16 @@ def upload_image_to_storage(file) -> str | None:
         st.error(f"Error uploading image: {res['error']['message']}")
         return None
 
+    # This is the actual public URL in Supabase
     public_url = supabase.storage.from_(BUCKET_NAME).get_public_url(path)
     return public_url
 
 
 def save_recipe_to_supabase(
-    name: str, description: str | None, text_body: str | None, image_url: str | None
+    name: str,
+    description: str | None,
+    text_body: str | None,
+    image_url: str | None,
 ):
     data = {
         "name": name,
@@ -167,7 +171,7 @@ with tab_image:
                         name=name_img or "Untitled recipe",
                         description=short_desc_img or None,
                         text_body=notes or None,
-                        image_url=image_url,
+                        image_url=image_url,  # store Supabase public URL
                     )
                     st.success("Image recipe submitted successfully!")
             except Exception as e:

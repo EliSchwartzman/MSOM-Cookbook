@@ -23,6 +23,7 @@ def upload_image_to_storage(file) -> str | None:
     if file is None:
         return None
 
+    # Important: we need raw bytes for upload and a seek back to 0 if reusing the file
     file_bytes = file.read()
     file_ext = file.name.split(".")[-1].lower()
 
@@ -152,8 +153,13 @@ with tab_image:
             st.error("Please upload an image to submit.")
         else:
             try:
+                # Show the image directly from the uploaded file (no URL needed here)
+                img = Image.open(uploaded_img)
+                st.image(img, caption="Uploaded image", use_container_width=True)
+
+                # Reset file pointer so upload uses full content
+                uploaded_img.seek(0)
                 image_url = upload_image_to_storage(uploaded_img)
-                st.write("Image URL:", image_url)  # debug line, optional
 
                 if image_url is None:
                     st.error("Could not upload image.")
@@ -165,7 +171,6 @@ with tab_image:
                         image_url=image_url,
                     )
                     st.success("Image recipe submitted successfully!")
-                    st.image(image_url, caption="Submitted image", use_container_width=True)
             except Exception as e:
                 st.error(f"Error saving image recipe: {e}")
 
@@ -198,5 +203,4 @@ with tab_list:
 
                 if r.get("image_url"):
                     st.markdown("**Image:**")
-                    st.write("Image URL:", r["image_url"])  # debug, optional
                     st.image(r["image_url"], use_container_width=True)

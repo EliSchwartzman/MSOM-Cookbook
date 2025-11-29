@@ -23,6 +23,7 @@ def upload_image_to_storage(file) -> str | None:
     if file is None:
         return None
 
+    # Read raw bytes
     file_bytes = file.read()
     file_ext = file.name.split(".")[-1].lower()
     if file_ext not in ["png", "jpg", "jpeg"]:
@@ -36,7 +37,7 @@ def upload_image_to_storage(file) -> str | None:
         file_options={"content-type": f"image/{file_ext}"},
     )
 
-    # Newer client returns a dict; older may differ slightly
+    # Handle error shape returned by client
     if isinstance(res, dict) and res.get("error"):
         st.error(f"Error uploading image: {res['error']['message']}")
         return None
@@ -45,7 +46,8 @@ def upload_image_to_storage(file) -> str | None:
     return public_url
 
 
-def save_recipe_to_supabase(name: str, description: str | None, text_body: str | None, image_url: str | None):
+def save_recipe_to_supabase(name: str, description: str | None,
+                            text_body: str | None, image_url: str | None):
     data = {
         "name": name,
         "description": description,
@@ -53,7 +55,6 @@ def save_recipe_to_supabase(name: str, description: str | None, text_body: str |
         "image_url": image_url,
     }
     response = supabase.table("recipes").insert(data).execute()
-    # Handle both old and new client styles
     if hasattr(response, "error") and response.error:
         raise RuntimeError(response.error)
     return response
@@ -72,10 +73,14 @@ def get_recipes_from_supabase():
 
 
 st.title("🍽 Community Recipe Submissions")
-st.write("Share your favorite recipes by typing them in or uploading a photo of the recipe or dish.")
+st.write(
+    "Share your favorite recipes by typing them in or uploading a photo of the recipe or dish."
+)
 
 
-tab_text, tab_image, tab_list = st.tabs(["Text submission", "Image submission", "All recipes"])
+tab_text, tab_image, tab_list = st.tabs(
+    ["Text submission", "Image submission", "All recipes"]
+)
 
 # TEXT SUBMISSION TAB
 with tab_text:
@@ -98,7 +103,9 @@ with tab_text:
 
     if submitted:
         if not name or (not ingredients and not instructions):
-            st.error("Please provide at least a name and some ingredients or instructions.")
+            st.error(
+                "Please provide at least a name and some ingredients or instructions."
+            )
         else:
             full_text = f"Ingredients:\n{ingredients}\n\nInstructions:\n{instructions}"
             try:
@@ -106,7 +113,7 @@ with tab_text:
                     name=name,
                     description=short_desc or None,
                     text_body=full_text,
-                    image_url=None,  # text-only recipes have no image
+                    image_url=None,  # text-only path
                 )
                 st.success("Text recipe submitted successfully!")
             except Exception as e:
@@ -115,7 +122,9 @@ with tab_text:
 # IMAGE SUBMISSION TAB
 with tab_image:
     st.subheader("Submit recipe by image")
-    st.write("Upload a photo of a handwritten recipe, a recipe screenshot, or a picture of the dish.")
+    st.write(
+        "Upload a photo of a handwritten recipe, a recipe screenshot, or a picture of the dish."
+    )
 
     with st.form("image_recipe_form"):
         name_img = st.text_input("Recipe name (optional)")
@@ -147,7 +156,11 @@ with tab_image:
                         image_url=image_url,
                     )
                     st.success("Image recipe submitted successfully!")
-                    st.image(image_url, caption="Submitted image", use_container_width=True)
+                    st.image(
+                        image_url,
+                        caption="Submitted image",
+                        use_container_width=True,
+                    )
             except Exception as e:
                 st.error(f"Error saving image recipe: {e}")
 

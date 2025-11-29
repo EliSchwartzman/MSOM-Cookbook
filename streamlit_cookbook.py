@@ -9,8 +9,8 @@ st.set_page_config(page_title="Recipe Submissions", page_icon="🍽", layout="ce
 
 @st.cache_resource
 def init_supabase() -> Client:
-    url = st.secrets["SUPABASE"]["SUPABASE_URL"] if "SUPABASE_URL" in st.secrets["SUPABASE"] else st.secrets["SUPABASE"]["URL"]
-    key = st.secrets["SUPABASE"]["SUPABASE_KEY"] if "SUPABASE_KEY" in st.secrets["SUPABASE"] else st.secrets["SUPABASE"]["KEY"]
+    url = st.secrets["SUPABASE"]["URL"]
+    key = st.secrets["SUPABASE"]["KEY"]
     return create_client(url, key)
 
 
@@ -26,11 +26,10 @@ def upload_image_to_storage(file) -> str | None:
     # Read bytes for upload
     file_bytes = file.read()
     file_ext = file.name.split(".")[-1].lower()
-
     if file_ext not in ["png", "jpg", "jpeg"]:
         file_ext = "png"
 
-    # Object key inside bucket
+    # Object key inside bucket: recipes/<uuid>.ext
     path = f"recipes/{uuid.uuid4()}.{file_ext}"
 
     res = supabase.storage.from_(BUCKET_NAME).upload(
@@ -39,7 +38,7 @@ def upload_image_to_storage(file) -> str | None:
         file_options={"content-type": f"image/{file_ext}"},
     )
 
-    # Some client versions return dict, others a Response-like object
+    # Handle error shape from Python client
     if isinstance(res, dict) and res.get("error"):
         st.error(f"Error uploading image: {res['error']['message']}")
         return None
@@ -59,7 +58,6 @@ def save_recipe_to_supabase(
     }
 
     response = supabase.table("recipes").insert(data).execute()
-
     if hasattr(response, "error") and response.error:
         raise RuntimeError(response.error)
 
@@ -154,11 +152,11 @@ with tab_image:
             st.error("Please upload an image to submit.")
         else:
             try:
-                # Preview directly from uploaded file
+                # Show preview directly from uploaded file
                 img = Image.open(uploaded_img)
                 st.image(img, caption="Uploaded image", use_container_width=True)
 
-                # Reset pointer so upload reads full bytes
+                # Reset pointer so upload reads all bytes
                 uploaded_img.seek(0)
                 image_url = upload_image_to_storage(uploaded_img)
 
@@ -204,5 +202,4 @@ with tab_list:
 
                 if r.get("image_url"):
                     st.markdown("**Image:**")
-                    st.write("URL debug:", r["image_url"])  # debug; remove when happy
                     st.image(r["image_url"], use_container_width=True)

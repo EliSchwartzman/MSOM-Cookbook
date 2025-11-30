@@ -3,7 +3,7 @@ import uuid
 import streamlit as st
 from PIL import Image
 from supabase import create_client, Client
-import pytesseract  # OCR
+import pytesseract 
 
 st.set_page_config(page_title="Recipe Submissions", page_icon="🍽", layout="centered")
 

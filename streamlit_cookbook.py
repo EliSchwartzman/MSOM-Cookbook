@@ -3,6 +3,7 @@ import uuid
 import streamlit as st
 from PIL import Image
 from supabase import create_client, Client
+import pytesseract  # OCR
 
 st.set_page_config(page_title="Recipe Submissions", page_icon="🍽", layout="centered")
 
@@ -17,6 +18,9 @@ def init_supabase() -> Client:
 supabase: Client = init_supabase()
 BUCKET_NAME = st.secrets["SUPABASE"]["BUCKET"]  # "recipes"
 
+# If needed on your host, set Tesseract path, e.g. on Windows:
+# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 
 def upload_image_to_storage(file) -> str | None:
     """Upload file bytes to Supabase Storage and return the public URL."""
@@ -28,7 +32,6 @@ def upload_image_to_storage(file) -> str | None:
     if file_ext not in ["png", "jpg", "jpeg"]:
         file_ext = "png"
 
-    # Object key inside bucket: recipes/<uuid>.ext
     path = f"recipes/{uuid.uuid4()}.{file_ext}"
 
     res = supabase.storage.from_(BUCKET_NAME).upload(
@@ -43,6 +46,16 @@ def upload_image_to_storage(file) -> str | None:
 
     public_url = supabase.storage.from_(BUCKET_NAME).get_public_url(path)
     return public_url
+
+
+def ocr_image(pil_image: Image.Image) -> str:
+    """Run OCR on a PIL image and return extracted text."""
+    try:
+        text = pytesseract.image_to_string(pil_image)
+        return text.strip()
+    except Exception as e:
+        st.error(f"OCR error: {e}")
+        return ""
 
 
 def save_recipe_to_supabase(
@@ -126,11 +139,12 @@ with tab_text:
             except Exception as e:
                 st.error(f"Error saving recipe: {e}")
 
-# IMAGE SUBMISSION TAB
+# IMAGE SUBMISSION TAB (with OCR)
 with tab_image:
     st.subheader("Submit recipe by image")
     st.write(
-        "Upload a photo of a handwritten recipe, a recipe screenshot, or a picture of the dish."
+        "Upload a photo of a handwritten recipe, a recipe screenshot, or a picture of the dish.\n"
+        "OCR will try to extract text from the image."
     )
 
     with st.form("image_recipe_form"):
@@ -153,11 +167,26 @@ with tab_image:
             st.error("Please upload an image to submit.")
         else:
             try:
-                # Preview directly from uploaded file
-                img = Image.open(uploaded_img)
-                st.image(img, caption="Uploaded image", use_container_width=True)
+                # Preview image
+                pil_img = Image.open(uploaded_img)
+                st.image(pil_img, caption="Uploaded image", use_container_width=True)
 
-                # Reset pointer so upload reads all bytes
+                # OCR
+                with st.spinner("Running OCR on image..."):
+                    ocr_text = ocr_image(pil_img)
+
+                if ocr_text:
+                    st.markdown("**Extracted text (OCR):**")
+                    st.text_area("OCR text", value=ocr_text, height=200)
+
+                # Combine OCR text and user notes into one text field
+                combined_text = ""
+                if ocr_text:
+                    combined_text += f"OCR text:\n{ocr_text}\n\n"
+                if notes:
+                    combined_text += f"Notes:\n{notes}"
+
+                # Upload to Supabase (need fresh bytes)
                 uploaded_img.seek(0)
                 image_url = upload_image_to_storage(uploaded_img)
 
@@ -167,10 +196,10 @@ with tab_image:
                     save_recipe_to_supabase(
                         name=name_img or "Untitled recipe",
                         description=short_desc_img or None,
-                        text_body=notes or None,
-                        image_url=image_url,  # Supabase public URL
+                        text_body=combined_text or None,
+                        image_url=image_url,
                     )
-                    st.success("Image recipe submitted successfully!")
+                    st.success("Image recipe (with OCR) submitted successfully!")
             except Exception as e:
                 st.error(f"Error saving image recipe: {e}")
 
@@ -198,12 +227,10 @@ with tab_list:
                     st.write(f"Submitted at: {created_at}")
 
                 if r.get("text"):
-                    st.markdown("**Details / Notes:**")
+                    st.markdown("**Details / Notes / OCR text:**")
                     st.text(r["text"])
 
                 if r.get("image_url"):
                     st.markdown("**Image:**")
-                    # Clickable URL to the Supabase-stored image
                     st.markdown(f"[Open image in new tab]({r['image_url']})")
-                    # Inline image preview
                     st.image(r["image_url"], use_container_width=True)

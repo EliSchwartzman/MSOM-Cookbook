@@ -5,46 +5,60 @@ import streamlit as st
 from PIL import Image
 from supabase import create_client, Client
 import pytesseract 
+import os # Import os for environment check (optional but good practice)
+
+# --- Configuration and Setup ---
 
 st.set_page_config(page_title="Recipe Submissions", page_icon="🍽", layout="centered")
 
-# Initialize Supabase client and cache the connection
 @st.cache_resource 
 def init_supabase() -> Client:
     """Initializes and returns the Supabase client using Streamlit secrets."""
-    # Ensure all required secrets are present
     if "SUPABASE" not in st.secrets:
-        st.error("Missing SUPABASE configuration in .streamlit/secrets.toml")
+        st.error("FATAL ERROR: Missing SUPABASE configuration in .streamlit/secrets.toml. Please check your file.")
         st.stop()
         
     url = st.secrets["SUPABASE"].get("URL")
     key = st.secrets["SUPABASE"].get("KEY")
+    
     if not url or not key:
-        st.error("Supabase URL or Key is missing or incomplete in secrets.")
+        st.error("FATAL ERROR: Supabase URL or Key is missing or incomplete in secrets.")
         st.stop()
         
     try:
+        # Attempt to create the client
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Failed to create Supabase client: {e}")
+        st.error(f"FATAL ERROR: Failed to create Supabase client. Check network connection or credentials. Details: {e}")
         st.stop()
 
-
+# Initialize Supabase client globally
 supabase: Client = init_supabase()
-# Use .get with the default to safely retrieve the BUCKET name
 BUCKET_NAME = st.secrets["SUPABASE"].get("BUCKET", "recipes") 
 
-# If needed on your host, set Tesseract path, e.g. on Windows:
-# KEEPING THIS LINE BASED ON PREVIOUS TROUBLESHOOTING. 
-# It overrides the system PATH variable search for tesseract.exe.
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# --- Tesseract/OCR Setup ---
+
+# *** FOOL-PROOF FIX: REMOVED EXPLICIT PATH ***
+# Since 'tesseract --version' works, we rely on the system PATH. 
+# This avoids the error caused by a path mismatch in the Python script.
+
+# Optional: Check if tesseract is available before running the app logic
+try:
+    pytesseract.get_tesseract_version()
+    TESSERACT_AVAILABLE = True
+except pytesseract.TesseractNotFoundError:
+    st.warning("OCR feature disabled: Tesseract is not installed or not in PATH. Image text extraction will fail.")
+    TESSERACT_AVAILABLE = False
+
+
+# --- Supabase Storage Functions ---
 
 def upload_image_to_storage(file) -> str | None:
     """Upload file bytes to Supabase Storage and return the public URL."""
     if file is None:
         return None
 
-    # Supabase upload uses the file's current pointer position, rewind for fresh read
+    # Rewind file pointer after previous reads (PIL/OCR)
     file.seek(0) 
     file_bytes = file.read()
     
@@ -55,7 +69,6 @@ def upload_image_to_storage(file) -> str | None:
     path = f"recipes/{uuid.uuid4()}.{file_ext}"
 
     try:
-        # Use an up-to-date content type for the upload
         supabase.storage.from_(BUCKET_NAME).upload(
             path=path,
             file=file_bytes,
@@ -66,20 +79,27 @@ def upload_image_to_storage(file) -> str | None:
         return public_url
     
     except Exception as e:
-        st.error(f"Error uploading image: {e}")
+        # Added specific advice for storage error
+        st.error(f"Error uploading image to Supabase Storage. Check Bucket Name/Policies. Details: {e}")
         return None
 
 
+# --- OCR Function ---
+
 def ocr_image(pil_image: Image.Image) -> str:
     """Run OCR on a PIL image and return extracted text."""
+    if not TESSERACT_AVAILABLE:
+        return "OCR failed: Tesseract not found on the system."
+        
     try:
         text = pytesseract.image_to_string(pil_image)
         return text.strip()
     except Exception as e:
-        # The error handling for missing Tesseract is now included here:
-        st.error(f"OCR error: {e}")
+        st.error(f"OCR execution error: {e}")
         return ""
 
+
+# --- Supabase DB Functions ---
 
 def save_recipe_to_supabase(
     name: str,
@@ -95,12 +115,11 @@ def save_recipe_to_supabase(
         "image_url": image_url,
     }
 
-    # The '.execute()' is important to send the request
     response = supabase.table("recipes").insert(data).execute()
     
-    # Check for error attribute in the response object
     if response and hasattr(response, "error") and response.error:
-        raise RuntimeError(response.error)
+        # Provide more context for DB errors
+        raise RuntimeError(f"Supabase DB Insert Error: {response.error}")
         
     return response
 
@@ -115,9 +134,9 @@ def get_recipes_from_supabase():
     )
 
     if response and hasattr(response, "error") and response.error:
-        raise RuntimeError(response.error)
+        # Provide more context for DB errors
+        raise RuntimeError(f"Supabase DB Select Error: {response.error}")
 
-    # response.data is the list of records
     return response.data or []
 
 
@@ -175,10 +194,12 @@ with tab_text:
 # IMAGE SUBMISSION TAB (with editable OCR)
 with tab_image:
     st.subheader("Submit recipe by image")
-    st.write(
-        "Upload a photo of a handwritten recipe, a recipe screenshot, or a picture of the dish.\n"
-        "OCR will try to extract text from the image."
-    )
+    if not TESSERACT_AVAILABLE:
+        st.warning("OCR is unavailable. You will need to manually enter the recipe details.")
+    else:
+        st.write(
+            "OCR will try to extract text from the image for easy editing."
+        )
 
     with st.form("image_recipe_form"):
         name_img = st.text_input("Recipe name (optional)", key="img_name")
@@ -201,7 +222,7 @@ with tab_image:
     if submitted_img:
         if uploaded_img is None:
             st.error("Please upload an image to submit.")
-            st.stop() # Stop execution after error
+            st.stop()
             
         try:
             # 1. Preview image
@@ -209,22 +230,25 @@ with tab_image:
             st.image(pil_img, caption="Uploaded image", use_container_width=True)
 
             # 2. OCR and make it editable
-            with st.spinner("Running OCR on image..."):
-                ocr_text = ocr_image(pil_img)
+            ocr_text = ""
+            if TESSERACT_AVAILABLE:
+                with st.spinner("Running OCR on image..."):
+                    ocr_text = ocr_image(pil_img)
 
             # Editable Text Area for Review
             st.markdown("### 📝 Review and Edit Extracted Text")
             if not ocr_text:
-                st.warning("Could not extract text. Please enter the recipe details manually below.")
+                st.warning("OCR could not extract text. Please enter the recipe details manually below.")
                 initial_text = ""
             else:
                 initial_text = ocr_text
 
+            # Note: Key is changed to prevent Streamlit widget identity conflicts across reruns
             edited_text = st.text_area(
-                "OCR Text (Editable)", 
+                "OCR/Recipe Text (Editable)", 
                 value=initial_text, 
                 height=250, 
-                key="edited_ocr_final"
+                key=f"edited_ocr_final_{uuid.uuid4()}" # Dynamic key for robustness
             )
             
             # 3. Combine edited text and user notes for final save
@@ -235,11 +259,10 @@ with tab_image:
                 combined_text += f"User Notes:\n{notes}"
 
             # 4. Upload image to Supabase Storage
-            # Must re-read the file content as it was read once for PIL/OCR
             image_url = upload_image_to_storage(uploaded_img)
 
             if image_url is None:
-                st.error("Could not upload image to storage.")
+                st.error("Image upload failed. Check Supabase Storage configuration/policies.")
             else:
                 # 5. Save metadata to Supabase DB
                 save_recipe_to_supabase(
@@ -250,7 +273,7 @@ with tab_image:
                 )
                 st.success("Image recipe (with OCR and notes) submitted successfully! Check the 'All recipes' tab.")
         except Exception as e:
-            st.error(f"Error saving image recipe: {e}")
+            st.error(f"Fatal error saving image recipe: {e}")
 
 # LIST TAB
 with tab_list:
@@ -278,9 +301,8 @@ with tab_list:
 
                     created_at_raw = r.get("created_at")
                     if created_at_raw:
-                        # Format the timestamp for better readability
                         try:
-                            dt_object = datetime.fromisoformat(created_at_raw)
+                            dt_object = datetime.fromisoformat(created_at_raw.replace('Z', '+00:00')) # Handle Z timezone
                             formatted_date = dt_object.strftime("%B %d, %Y at %I:%M %p")
                             st.caption(f"Submitted on: {formatted_date}")
                         except ValueError:
@@ -288,7 +310,6 @@ with tab_list:
 
                     if r.get("text"):
                         st.markdown("**Details / Notes / OCR text:**")
-                        # Use st.markdown to respect any potential markdown formatting (e.g., lists)
                         st.markdown(r["text"]) 
 
                     if r.get("image_url"):

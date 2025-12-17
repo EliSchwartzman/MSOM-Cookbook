@@ -20,16 +20,23 @@ def init_supabase() -> Client:
     url = st.secrets["SUPABASE"].get("URL")
     key = st.secrets["SUPABASE"].get("KEY")
     if not url or not key:
-        st.error("Supabase URL or Key is missing in secrets.")
+        st.error("Supabase URL or Key is missing or incomplete in secrets.")
         st.stop()
         
-    return create_client(url, key)
+    try:
+        return create_client(url, key)
+    except Exception as e:
+        st.error(f"Failed to create Supabase client: {e}")
+        st.stop()
 
 
 supabase: Client = init_supabase()
-BUCKET_NAME = st.secrets["SUPABASE"].get("BUCKET", "recipes") # Default to "recipes"
+# Use .get with the default to safely retrieve the BUCKET name
+BUCKET_NAME = st.secrets["SUPABASE"].get("BUCKET", "recipes") 
 
 # If needed on your host, set Tesseract path, e.g. on Windows:
+# KEEPING THIS LINE BASED ON PREVIOUS TROUBLESHOOTING. 
+# It overrides the system PATH variable search for tesseract.exe.
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 def upload_image_to_storage(file) -> str | None:
@@ -43,7 +50,6 @@ def upload_image_to_storage(file) -> str | None:
     
     file_ext = file.name.split(".")[-1].lower()
     if file_ext not in ["png", "jpg", "jpeg"]:
-        # Fallback to jpg if extension is unknown/unsupported by Streamlit file_uploader type list
         file_ext = "jpg" 
 
     path = f"recipes/{uuid.uuid4()}.{file_ext}"
@@ -56,7 +62,6 @@ def upload_image_to_storage(file) -> str | None:
             file_options={"content-type": f"image/{file_ext}"},
         )
         
-        # Note: 'upload' returns a dictionary with 'path' key on success in newer supabase-py versions
         public_url = supabase.storage.from_(BUCKET_NAME).get_public_url(path)
         return public_url
     
@@ -71,8 +76,8 @@ def ocr_image(pil_image: Image.Image) -> str:
         text = pytesseract.image_to_string(pil_image)
         return text.strip()
     except Exception as e:
+        # The error handling for missing Tesseract is now included here:
         st.error(f"OCR error: {e}")
-        # Note: If Tesseract is not installed on the system, this will fail.
         return ""
 
 

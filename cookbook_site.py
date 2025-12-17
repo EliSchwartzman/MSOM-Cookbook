@@ -30,8 +30,7 @@ supabase: Client = init_supabase()
 BUCKET_NAME = st.secrets["SUPABASE"].get("BUCKET", "recipes") # Default to "recipes"
 
 # If needed on your host, set Tesseract path, e.g. on Windows:
-# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 def upload_image_to_storage(file) -> str | None:
     """Upload file bytes to Supabase Storage and return the public URL."""

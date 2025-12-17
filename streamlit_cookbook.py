@@ -7,8 +7,8 @@ import pytesseract
 
 st.set_page_config(page_title="Recipe Submissions", page_icon="🍽", layout="centered")
 
-
-@st.cache_resource
+#want to import these from an env file (Not streamilt secrets)
+@st.cache_resource 
 def init_supabase() -> Client:
     url = st.secrets["SUPABASE"]["URL"]
     key = st.secrets["SUPABASE"]["KEY"]
